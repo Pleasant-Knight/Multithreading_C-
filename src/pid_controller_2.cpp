@@ -1,107 +1,108 @@
-#include <thread>
-#include <chrono>
-#include <mutex>
 #include <atomic>
+#include <chrono>
+#include <cstdio>
+#include <mutex>
 #include <random>
 #include <sstream>
 #include <string>
-#include <cstdio>
+#include <thread>
 
 using namespace std::chrono_literals;
 
 struct SharedSensorData {
-    std::mutex mtx;
-    double value = 0.0;
-    std::chrono::steady_clock::time_point timestamp;
+  std::mutex mtx;
+  double value = 0.0;
+  std::chrono::steady_clock::time_point timestamp;
 };
 
 class PIDController {
 public:
-    PIDController(double kp, double ki, double kd)
-        : kp_(kp), ki_(ki), kd_(kd), prev_error_(0), integral_(0) {}
+  PIDController(double kp, double ki, double kd)
+      : kp_(kp), ki_(ki), kd_(kd), prev_error_(0), integral_(0) {}
 
-    double compute(double setpoint, double measurement) {
-        double error = setpoint - measurement;
-        integral_ += error;
-        double derivative = error - prev_error_;
-        prev_error_ = error;
-        return kp_ * error + ki_ * integral_ + kd_ * derivative;
-    }
+  double compute(double setpoint, double measurement) {
+    double error = setpoint - measurement;
+    integral_ += error;
+    double derivative = error - prev_error_;
+    prev_error_ = error;
+    return kp_ * error + ki_ * integral_ + kd_ * derivative;
+  }
 
 private:
-    double kp_, ki_, kd_;
-    double prev_error_;
-    double integral_;
+  double kp_, ki_, kd_;
+  double prev_error_;
+  double integral_;
 };
 
 std::string get_thread_id_str() {
-    std::stringstream ss;
-    ss << std::this_thread::get_id();
-    return ss.str();
+  std::stringstream ss;
+  ss << std::this_thread::get_id();
+  return ss.str();
 }
 
-void sensorThread(SharedSensorData& data, bool& running) {
-    std::string thread_id = get_thread_id_str();
-    std::mt19937 rng(std::random_device{}());
-    std::uniform_real_distribution<double> dist(0.0, 10.0);
+void sensorThread(SharedSensorData &data, bool &running) {
+  std::string thread_id = get_thread_id_str();
+  std::mt19937 rng(std::random_device{}());
+  std::uniform_real_distribution<double> dist(0.0, 10.0);
 
-    while (running) {
-        std::this_thread::sleep_for(2s);  // Simulate slow sensor
+  while (running) {
+    std::this_thread::sleep_for(2s); // Simulate slow sensor
 
-        double simulated_value = dist(rng);
-        {
-            std::lock_guard<std::mutex> lock(data.mtx);
-            data.value = simulated_value;
-            data.timestamp = std::chrono::steady_clock::now();
-        }
-
-        std::printf("[SensorThread | ID: %s] New sensor value: %.2f\n",
-                    thread_id.c_str(), simulated_value);
+    double simulated_value = dist(rng);
+    {
+      std::lock_guard<std::mutex> lock(data.mtx);
+      data.value = simulated_value;
+      data.timestamp = std::chrono::steady_clock::now();
     }
+
+    std::printf("[SensorThread | ID: %s] New sensor value: %.2f\n",
+                thread_id.c_str(), simulated_value);
+  }
 }
 
-void controlThread(SharedSensorData& data, bool& running, double setpoint) {
-    std::string thread_id = get_thread_id_str();
-    PIDController pid(1.0, 0.1, 0.05);
+void controlThread(SharedSensorData &data, bool &running, double setpoint) {
+  std::string thread_id = get_thread_id_str();
+  PIDController pid(1.0, 0.1, 0.05);
 
-    while (running) {
-        std::this_thread::sleep_for(500ms);
+  while (running) {
+    std::this_thread::sleep_for(500ms);
 
-        double current_value;
-        {
-            std::lock_guard<std::mutex> lock(data.mtx);
-            current_value = data.value;
-        }
-
-        double output = pid.compute(setpoint, current_value);
-
-        std::printf("[ControlThread | ID: %s] Measured: %.2f, PID Output: %.2f\n",
-                    thread_id.c_str(), current_value, output);
+    double current_value;
+    {
+      std::lock_guard<std::mutex> lock(data.mtx);
+      current_value = data.value;
     }
+
+    double output = pid.compute(setpoint, current_value);
+
+    std::printf("[ControlThread | ID: %s] Measured: %.2f, PID Output: %.2f\n",
+                thread_id.c_str(), current_value, output);
+  }
 }
 
 int main() {
-    std::printf("Compilation Command:\n");
-    std::printf("g++ -std=c++20 -pthread -O2 -o pid_controller <file name.CPP>\n\n");
+  std::printf("Compilation Command:\n");
+  std::printf(
+      "g++ -std=c++20 -pthread -O2 -o pid_controller <file name.CPP>\n\n");
 
-    SharedSensorData sensorData;
-    sensorData.timestamp = std::chrono::steady_clock::now();
-    bool running = true;
-    double setpoint = 5.0;
+  SharedSensorData sensorData;
+  sensorData.timestamp = std::chrono::steady_clock::now();
+  bool running = true;
+  double setpoint = 5.0;
 
-    std::thread sensor(sensorThread, std::ref(sensorData), std::ref(running));
-    std::thread controller(controlThread, std::ref(sensorData), std::ref(running), setpoint);
+  std::thread sensor(sensorThread, std::ref(sensorData), std::ref(running));
+  std::thread controller(controlThread, std::ref(sensorData), std::ref(running),
+                         setpoint);
 
-    std::this_thread::sleep_for(10s);
+  std::this_thread::sleep_for(10s);
 
-    running = false;
-    sensor.join();
-    controller.join();
+  running = false;
+  sensor.join();
+  controller.join();
 
-    std::printf("\n[Main] Program completed. Exiting.\n");
-    return 0;
+  std::printf("\n[Main] Program completed. Exiting.\n");
+  return 0;
 } // 448 assembly lines
-
 
 /*
     Executor x86-64 gcc 15.1 (C++, Editor #1)

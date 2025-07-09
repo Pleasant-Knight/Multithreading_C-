@@ -1,133 +1,134 @@
+#include <pthread.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <pthread.h>
-#include <unistd.h>
-#include <time.h>
-#include <stdbool.h>
 #include <string.h>
+#include <time.h>
+#include <unistd.h>
 
 typedef struct {
-    pthread_mutex_t mtx;
-    double value;
-    struct timespec timestamp;
+  pthread_mutex_t mtx;
+  double value;
+  struct timespec timestamp;
 } SharedSensorData;
 
 typedef struct {
-    double kp, ki, kd;
-    double prev_error;
-    double integral;
+  double kp, ki, kd;
+  double prev_error;
+  double integral;
 } PIDController;
 
 typedef struct {
-    SharedSensorData* data;
-    bool* running;
+  SharedSensorData *data;
+  bool *running;
 } SensorArgs;
 
 typedef struct {
-    SharedSensorData* data;
-    bool* running;
-    double setpoint;
+  SharedSensorData *data;
+  bool *running;
+  double setpoint;
 } ControlArgs;
 
-void pid_init(PIDController* pid, double kp, double ki, double kd) {
-    pid->kp = kp;
-    pid->ki = ki;
-    pid->kd = kd;
-    pid->prev_error = 0.0;
-    pid->integral = 0.0;
+void pid_init(PIDController *pid, double kp, double ki, double kd) {
+  pid->kp = kp;
+  pid->ki = ki;
+  pid->kd = kd;
+  pid->prev_error = 0.0;
+  pid->integral = 0.0;
 }
 
-double pid_compute(PIDController* pid, double setpoint, double measurement) {
-    double error = setpoint - measurement;
-    pid->integral += error;
-    double derivative = error - pid->prev_error;
-    pid->prev_error = error;
+double pid_compute(PIDController *pid, double setpoint, double measurement) {
+  double error = setpoint - measurement;
+  pid->integral += error;
+  double derivative = error - pid->prev_error;
+  pid->prev_error = error;
 
-    return pid->kp * error + pid->ki * pid->integral + pid->kd * derivative;
+  return pid->kp * error + pid->ki * pid->integral + pid->kd * derivative;
 }
 
-void* sensor_thread(void* args) {
-    SensorArgs* sargs = (SensorArgs*)args;
-    SharedSensorData* data = sargs->data;
-    bool* running = sargs->running;
+void *sensor_thread(void *args) {
+  SensorArgs *sargs = (SensorArgs *)args;
+  SharedSensorData *data = sargs->data;
+  bool *running = sargs->running;
 
-    srand(time(NULL));
-    pthread_t tid = pthread_self();
+  srand(time(NULL));
+  pthread_t tid = pthread_self();
 
-    while (*running) {
-        sleep(2);  // simulate slow sensor
+  while (*running) {
+    sleep(2); // simulate slow sensor
 
-        double new_value = (rand() % 1000) / 100.0;  // 0.00 to 9.99
+    double new_value = (rand() % 1000) / 100.0; // 0.00 to 9.99
 
-        pthread_mutex_lock(&data->mtx);
-        data->value = new_value;
-        clock_gettime(CLOCK_REALTIME, &data->timestamp);
-        pthread_mutex_unlock(&data->mtx);
+    pthread_mutex_lock(&data->mtx);
+    data->value = new_value;
+    clock_gettime(CLOCK_REALTIME, &data->timestamp);
+    pthread_mutex_unlock(&data->mtx);
 
-        printf("[SensorThread | ID: %lu] New sensor value: %.2f\n", tid, new_value);
-    }
+    printf("[SensorThread | ID: %lu] New sensor value: %.2f\n", tid, new_value);
+  }
 
-    return NULL;
+  return NULL;
 }
 
-void* control_thread(void* args) {
-    ControlArgs* cargs = (ControlArgs*)args;
-    SharedSensorData* data = cargs->data;
-    bool* running = cargs->running;
-    double setpoint = cargs->setpoint;
+void *control_thread(void *args) {
+  ControlArgs *cargs = (ControlArgs *)args;
+  SharedSensorData *data = cargs->data;
+  bool *running = cargs->running;
+  double setpoint = cargs->setpoint;
 
-    pthread_t tid = pthread_self();
-    PIDController pid;
-    pid_init(&pid, 1.0, 0.1, 0.05);
+  pthread_t tid = pthread_self();
+  PIDController pid;
+  pid_init(&pid, 1.0, 0.1, 0.05);
 
-    while (*running) {
-        usleep(500000);  // control loop at 2 Hz
+  while (*running) {
+    usleep(500000); // control loop at 2 Hz
 
-        double current_value;
-        pthread_mutex_lock(&data->mtx);
-        current_value = data->value;
-        pthread_mutex_unlock(&data->mtx);
+    double current_value;
+    pthread_mutex_lock(&data->mtx);
+    current_value = data->value;
+    pthread_mutex_unlock(&data->mtx);
 
-        double output = pid_compute(&pid, setpoint, current_value);
+    double output = pid_compute(&pid, setpoint, current_value);
 
-        printf("[ControlThread | ID: %lu] Measured: %.2f, PID Output: %.2f\n",
-               tid, current_value, output);
-    }
+    printf("[ControlThread | ID: %lu] Measured: %.2f, PID Output: %.2f\n", tid,
+           current_value, output);
+  }
 
-    return NULL;
+  return NULL;
 }
 
 int main() {
-    printf("Compilation Command:\n");
-    printf("gcc -O2 -pthread -o pid_controller pid_controller.c\n\n");
+  printf("Compilation Command:\n");
+  printf("gcc -O2 -pthread -o pid_controller pid_controller.c\n\n");
 
-    SharedSensorData sensorData;
-    pthread_mutex_init(&sensorData.mtx, NULL);
-    sensorData.value = 0.0;
-    clock_gettime(CLOCK_REALTIME, &sensorData.timestamp);
+  SharedSensorData sensorData;
+  pthread_mutex_init(&sensorData.mtx, NULL);
+  sensorData.value = 0.0;
+  clock_gettime(CLOCK_REALTIME, &sensorData.timestamp);
 
-    bool running = true;
+  bool running = true;
 
-    pthread_t sensor_tid, control_tid;
+  pthread_t sensor_tid, control_tid;
 
-    SensorArgs sargs = { .data = &sensorData, .running = &running };
-    ControlArgs cargs = { .data = &sensorData, .running = &running, .setpoint = 5.0 };
+  SensorArgs sargs = {.data = &sensorData, .running = &running};
+  ControlArgs cargs = {
+      .data = &sensorData, .running = &running, .setpoint = 5.0};
 
-    pthread_create(&sensor_tid, NULL, sensor_thread, &sargs);
-    pthread_create(&control_tid, NULL, control_thread, &cargs);
+  pthread_create(&sensor_tid, NULL, sensor_thread, &sargs);
+  pthread_create(&control_tid, NULL, control_thread, &cargs);
 
-    sleep(10);  // Let the system run for 10 seconds
+  sleep(10); // Let the system run for 10 seconds
 
-    running = false;
+  running = false;
 
-    pthread_join(sensor_tid, NULL);
-    pthread_join(control_tid, NULL);
+  pthread_join(sensor_tid, NULL);
+  pthread_join(control_tid, NULL);
 
-    pthread_mutex_destroy(&sensorData.mtx);
+  pthread_mutex_destroy(&sensorData.mtx);
 
-    printf("\n[Main] Program completed. Exiting.\n");
-    return 0;
-} // this is 285 lines of asm 
+  printf("\n[Main] Program completed. Exiting.\n");
+  return 0;
+} // this is 285 lines of asm
 /*
     Executor x86-64 gcc 15.1 (C, Editor #1)
 
