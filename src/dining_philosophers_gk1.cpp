@@ -1,3 +1,4 @@
+#include <functional>
 #include <mutex>
 #include <thread>
 #include <vector>
@@ -27,7 +28,8 @@ public:
         if (philosopher == (NUM_PHILOSOPHERS - 1)) {
             std::lock_guard<std::mutex> right_lock(forks[right]);
             std::lock_guard<std::mutex> left_lock(forks[left]);
-            // Print statement to indicate which philosopher is eating
+            // Print statement to indicate which philosopher is eating.
+            // Using a lock to ensure thread-safe printing.
             {
                 std::lock_guard<std::mutex> print_lock(print_mutex);
                 std::printf("Philosopher %d is eating\n", philosopher);
@@ -60,14 +62,15 @@ public:
 void pickLeftFork() { std::printf("Picked left fork\n"); }
 void pickRightFork() { std::printf("Picked right fork\n"); }
 void eat() { 
-    std::printf("Eating\n"); 
-    std::this_thread::sleep_for(std::chrono::milliseconds(100)); // Simulate eating time
+    std::printf("Eating -->  Simulate eating time\n"); 
+    std::this_thread::sleep_for(std::chrono::milliseconds(90)); // Simulate eating time
 }
 void putLeftFork() { std::printf("Put down left fork\n"); }
 void putRightFork() { std::printf("Put down right fork\n"); }
 
 // Main function to test the DiningPhilosophers class
 int main() {
+    std::printf("Compile: g++ -std=c++11 dining_philosophers.cpp -o dining_philosophers.app -pthread\n");
     DiningPhilosophers dp;
     std::vector<std::thread> threads;
 
@@ -76,8 +79,9 @@ int main() {
         threads.emplace_back([i, &dp]() {
             for (int j = 0; j < 3; ++j) {
                 dp.wantsToEat(i, pickLeftFork, pickRightFork, eat, putLeftFork, putRightFork);
-                // Simulate thinking time
-                std::this_thread::sleep_for(std::chrono::milliseconds(50));
+                std::printf("Thinking -->  Simulate thinking time\n"); 
+                // Simulate thinking time.
+                std::this_thread::sleep_for(std::chrono::milliseconds(40));
             }
         });
     }
