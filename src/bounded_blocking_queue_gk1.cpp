@@ -16,8 +16,6 @@
 #include <vector>
 #include <chrono>
 
-using std::chrono::milliseconds;
-
 class BoundedBlockingQueue {
 private:
     std::queue<int> queue_;
